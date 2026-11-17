@@ -2,8 +2,54 @@ import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import { Bot } from "grammy";
+import mongoose from "mongoose";
 
 dotenv.config();
+
+// ---------------- BAZAGA ULANISH ---------------- //
+// Mahsulot sxemasi: bazada mahsulot qanday maydonlardan iborat ekanini belgilaydi
+const productSchema = new mongoose.Schema(
+  {
+    title: { type: String, required: true },
+    price: { type: Number, required: true },
+    discount_price: Number,
+    stars: { type: Number, default: 0 },
+    review_quantity: { type: Number, default: 0 },
+    category: Number,
+    description: String,
+    pictures: [String],
+  },
+  {
+    // Frontend `id` ni ishlatadi, shuning uchun JSON'ga `id` ni ham qo'shamiz
+    toJSON: {
+      virtuals: true,
+      versionKey: false,
+      transform: (doc, ret) => {
+        delete ret._id;
+      },
+    },
+  }
+);
+
+const Product = mongoose.model("Product", productSchema);
+
+// Baza bo'sh bo'lsa, pastdagi mock mahsulotlarni bir marta bazaga yozadi
+async function seedProducts() {
+  const count = await Product.countDocuments();
+  if (count === 0) {
+    const data = products.map(({ id, ...rest }) => rest); // eski `id` ni olib tashlaymiz
+    await Product.insertMany(data);
+    console.log(`🌱 ${data.length} ta mahsulot bazaga yozildi`);
+  }
+}
+
+mongoose
+  .connect(process.env.MONGO_URI)
+  .then(async () => {
+    console.log("✅ Baza ulandi");
+    await seedProducts();
+  })
+  .catch((err) => console.log("❌ Bazaga ulanishda xato:", err.message));
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -115,8 +161,51 @@ app.get("/product/categories/", (req, res) => {
 });
 
 // 3. Mahsulotlarni qaytaruvchi API
-app.get("/product/list/", (req, res) => {
-  res.json(products);
+app.get("/product/list/", async (req, res) => {
+  try {
+    const list = await Product.find();
+    res.json(list);
+  } catch (error) {
+    console.error("Mahsulotlarni olishda xato:", error.message);
+    res.status(500).json({ ok: false, message: "Server xatosi" });
+  }
+});
+
+// ---------------- ADMIN API (kalit bilan himoyalangan) ---------------- //
+
+// Admin kalitini tekshiradi: so'rov headerida `x-admin-key` to'g'ri bo'lishi kerak
+function checkAdmin(req, res, next) {
+  const key = req.headers["x-admin-key"];
+  if (!process.env.ADMIN_KEY || key !== process.env.ADMIN_KEY) {
+    return res.status(401).json({ ok: false, message: "Ruxsat yo'q" });
+  }
+  next();
+}
+
+// Yangi mahsulot qo'shish
+app.post("/product/", checkAdmin, async (req, res) => {
+  try {
+    const product = await Product.create(req.body);
+    res.status(201).json(product);
+  } catch (error) {
+    res.status(400).json({ ok: false, message: error.message });
+  }
+});
+
+// Mahsulotni o'chirish
+app.delete("/product/:id", checkAdmin, async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ ok: false, message: "ID noto'g'ri" });
+    }
+    const deleted = await Product.findByIdAndDelete(req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ ok: false, message: "Mahsulot topilmadi" });
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error.message });
+  }
 });
 
 // 4. Buyurtma qabul qilish
