@@ -3,7 +3,8 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { Bot } from "grammy";
 import mongoose from "mongoose";
-
+import dns from "dns";
+dns.setServers(["8.8.8.8", "1.1.1.1"]);
 dotenv.config();
 
 // ---------------- BAZAGA ULANISH ---------------- //
@@ -32,6 +33,21 @@ const productSchema = new mongoose.Schema(
 );
 
 const Product = mongoose.model("Product", productSchema);
+
+// Buyurtma sxemasi: har bir buyurtma bazada saqlanadi
+const orderSchema = new mongoose.Schema(
+  {
+    number: { type: Number, required: true, unique: true }, // #1, #2, #3...
+    items: [mongoose.Schema.Types.Mixed], // savatdagi tovarlar (title, price, quantity...)
+    name: String,
+    phone: String,
+    address: String,
+    userId: mongoose.Schema.Types.Mixed, // Telegram ID (bo'lmasligi ham mumkin)
+  },
+  { timestamps: true } // createdAt va updatedAt avtomatik qo'shiladi
+);
+
+const Order = mongoose.model("Order", orderSchema);
 
 // Baza bo'sh bo'lsa, pastdagi mock mahsulotlarni bir marta bazaga yozadi
 async function seedProducts() {
@@ -145,9 +161,6 @@ const products = [
   },
 ];
 
-// Xotirada buyurtmalarni saqlab turish uchun ro'yxat
-const orders = [];
-
 // ---------------- API ENDPOINTLAR ---------------- //
 
 // 1. Server ishlayotganini tekshirish
@@ -216,17 +229,26 @@ app.post("/order", async (req, res) => {
     return res.status(400).json({ ok: false, message: "Savat bo'sh" });
   }
 
-  const newOrder = {
-    id: orders.length + 1,
-    items,
-    name: name || "Noma'lum",
-    phone: phone || "Ko'rsatilmagan",
-    address: address || "Ko'rsatilmagan",
-    userId,
-    createdAt: new Date().toISOString(),
-  };
+  // Buyurtmani bazaga saqlaymiz (raqami oxirgi buyurtma raqamidan keyingisi bo'ladi)
+  let newOrder;
+  try {
+    const lastOrder = await Order.findOne().sort({ number: -1 });
+    const number = lastOrder ? lastOrder.number + 1 : 1;
 
-  orders.push(newOrder);
+    const saved = await Order.create({
+      number,
+      items,
+      name: name || "Noma'lum",
+      phone: phone || "Ko'rsatilmagan",
+      address: address || "Ko'rsatilmagan",
+      userId,
+    });
+
+    newOrder = { id: saved.number, name: saved.name, phone: saved.phone, address: saved.address };
+  } catch (error) {
+    console.error("Buyurtmani saqlashda xato:", error.message);
+    return res.status(500).json({ ok: false, message: "Buyurtma saqlanmadi" });
+  }
 
   // Tovarlar ro'yxati matni
   const itemsText = items
