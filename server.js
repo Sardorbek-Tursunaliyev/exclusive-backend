@@ -3,8 +3,7 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { Bot } from "grammy";
 import mongoose from "mongoose";
-import dns from "dns";
-dns.setServers(["8.8.8.8", "1.1.1.1"]);
+
 dotenv.config();
 
 // ---------------- BAZAGA ULANISH ---------------- //
@@ -49,6 +48,53 @@ const orderSchema = new mongoose.Schema(
 
 const Order = mongoose.model("Order", orderSchema);
 
+// Banner sxemasi: bosh sahifadagi slayderdagi rasmlar
+const bannerSchema = new mongoose.Schema(
+  {
+    image: { type: String, required: true }, // rasm havolasi
+    title: String, // ixtiyoriy sarlavha
+    link: String, // ixtiyoriy: bosilganda ochiladigan sahifa (masalan /catalog)
+    order: { type: Number, default: 0 }, // slayderdagi tartibi (kichigi birinchi)
+    active: { type: Boolean, default: true }, // false bo'lsa ko'rinmaydi
+  },
+  {
+    toJSON: {
+      virtuals: true,
+      versionKey: false,
+      transform: (doc, ret) => {
+        delete ret._id;
+      },
+    },
+  }
+);
+
+const Banner = mongoose.model("Banner", bannerSchema);
+
+// Baza bo'sh bo'lsa, boshlang'ich bannerlarni bir marta yozadi (keyin admin o'zgartiradi)
+async function seedBanners() {
+  const count = await Banner.countDocuments();
+  if (count === 0) {
+    await Banner.insertMany([
+      {
+        image: "https://images.unsplash.com/photo-1505740420928-5e560c06d30e?w=1200&auto=format&fit=crop",
+        title: "Quloqchinlar",
+        order: 1,
+      },
+      {
+        image: "https://images.unsplash.com/photo-1598327105666-5b89351aff97?w=1200&auto=format&fit=crop",
+        title: "Smartfonlar",
+        order: 2,
+      },
+      {
+        image: "https://images.unsplash.com/photo-1624378439575-d8705ad7ae80?w=1200&auto=format&fit=crop",
+        title: "Kiyimlar",
+        order: 3,
+      },
+    ]);
+    console.log("🌱 3 ta banner bazaga yozildi");
+  }
+}
+
 // Baza bo'sh bo'lsa, pastdagi mock mahsulotlarni bir marta bazaga yozadi
 async function seedProducts() {
   const count = await Product.countDocuments();
@@ -64,6 +110,7 @@ mongoose
   .then(async () => {
     console.log("✅ Baza ulandi");
     await seedProducts();
+    await seedBanners();
   })
   .catch((err) => console.log("❌ Bazaga ulanishda xato:", err.message));
 
@@ -214,6 +261,43 @@ app.delete("/product/:id", checkAdmin, async (req, res) => {
     const deleted = await Product.findByIdAndDelete(req.params.id);
     if (!deleted) {
       return res.status(404).json({ ok: false, message: "Mahsulot topilmadi" });
+    }
+    res.json({ ok: true });
+  } catch (error) {
+    res.status(500).json({ ok: false, message: error.message });
+  }
+});
+
+// Bannerlar ro'yxati (hamma ko'ra oladi): faqat faol bannerlar, tartib bo'yicha
+app.get("/banner/list/", async (req, res) => {
+  try {
+    const list = await Banner.find({ active: true }).sort({ order: 1, createdAt: 1 });
+    res.json(list);
+  } catch (error) {
+    console.error("Bannerlarni olishda xato:", error.message);
+    res.status(500).json({ ok: false, message: "Server xatosi" });
+  }
+});
+
+// Yangi banner qo'shish (admin)
+app.post("/banner/", checkAdmin, async (req, res) => {
+  try {
+    const banner = await Banner.create(req.body);
+    res.status(201).json(banner);
+  } catch (error) {
+    res.status(400).json({ ok: false, message: error.message });
+  }
+});
+
+// Bannerni o'chirish (admin)
+app.delete("/banner/:id", checkAdmin, async (req, res) => {
+  try {
+    if (!mongoose.isValidObjectId(req.params.id)) {
+      return res.status(400).json({ ok: false, message: "ID noto'g'ri" });
+    }
+    const deleted = await Banner.findByIdAndDelete(req.params.id);
+    if (!deleted) {
+      return res.status(404).json({ ok: false, message: "Banner topilmadi" });
     }
     res.json({ ok: true });
   } catch (error) {
