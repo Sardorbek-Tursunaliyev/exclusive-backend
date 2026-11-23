@@ -3,6 +3,8 @@ import cors from "cors";
 import dotenv from "dotenv";
 import { Bot } from "grammy";
 import mongoose from "mongoose";
+import swaggerUi from "swagger-ui-express";
+import { swaggerDocument } from "./swagger.js";
 
 dotenv.config();
 
@@ -208,11 +210,30 @@ const products = [
   },
 ];
 
+// ---------------- SWAGGER HUJJATLARI (API DOCS) ---------------- //
+// Swagger interaktiv interfeysi: /api-docs
+app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerDocument));
+
+// JSON formatdagi OpenAPI sxemasi: /swagger.json
+app.get("/swagger.json", (req, res) => {
+  res.json(swaggerDocument);
+});
+
 // ---------------- API ENDPOINTLAR ---------------- //
 
 // 1. Server ishlayotganini tekshirish
 app.get("/", (req, res) => {
-  res.send("🚀 Backend serverimiz 100% ishlayapti!");
+  res.send(`
+    <div style="font-family: system-ui, -apple-system, sans-serif; text-align: center; padding: 60px 20px;">
+      <h1 style="color: #16a34a; font-size: 28px;">🚀 Exclusive Backend 100% ishlayapti!</h1>
+      <p style="color: #4b5563; font-size: 16px; margin: 20px 0 30px;">
+        Barcha API endpointlar va sinov muhitini Swagger orqali ko'rishingiz mumkin:
+      </p>
+      <a href="/api-docs" style="display: inline-block; padding: 12px 28px; background: #2563eb; color: white; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 16px; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.3);">
+        📖 Swagger API Docs ochish
+      </a>
+    </div>
+  `);
 });
 
 // 2. Kategoriyalarni qaytaruvchi API
